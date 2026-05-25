@@ -1,0 +1,10 @@
+node_modules
+dist
+*.sqlite
+*.sqlite-journal
+.env
+uploads/*
+!uploads/.gitkeep
+*.log
+*.err
+*.tsbuildinfo
