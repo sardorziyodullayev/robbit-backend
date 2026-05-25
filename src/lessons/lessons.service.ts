@@ -11,6 +11,7 @@ import { Lesson } from "./lesson.entity";
 import { LessonProgress } from "./lesson-progress.entity";
 import { Course } from "../courses/course.entity";
 import { CreateLessonDto, UpdateLessonDto } from "./dto/lesson.dto";
+import { StorageService } from "../common/storage/storage.service";
 
 export interface LessonView {
   id: number;
@@ -36,6 +37,7 @@ export class LessonsService {
     @InjectRepository(LessonProgress) private readonly progress: Repository<LessonProgress>,
     @InjectRepository(Course) private readonly courses: Repository<Course>,
     private readonly cfg: ConfigService,
+    private readonly storage: StorageService,
   ) {}
 
   async byCourse(courseId: number, userId?: string): Promise<LessonView[]> {
@@ -132,8 +134,10 @@ export class LessonsService {
   async attachVideo(lessonId: number, file: Express.Multer.File): Promise<LessonView> {
     const l = await this.lessons.findOne({ where: { id: lessonId } });
     if (!l) throw new NotFoundException("Dars topilmadi");
-    const publicUrl = this.cfg.get<string>("PUBLIC_URL") ?? "";
-    l.videoUrl = `${publicUrl}/uploads/${file.filename}`;
+    if (!file) throw new BadRequestException("Fayl yuborilmadi");
+    if (l.videoUrl) await this.storage.delete(l.videoUrl);
+    const stored = await this.storage.upload(file, { prefix: "lesson" });
+    l.videoUrl = stored.url;
     return this.toView(await this.lessons.save(l));
   }
 

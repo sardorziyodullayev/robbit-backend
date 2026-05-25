@@ -42,6 +42,17 @@ services:
         value: ./uploads
       - key: PUBLIC_URL
         value: https://robbit-backend.onrender.com
+      # Cloudflare R2 (object storage) — qiymatlarni Render dashboard'ida qo'ling bilan kiriting
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
       - key: SEED_ON_START
         value: "true"
       - key: ADMIN_USERNAME

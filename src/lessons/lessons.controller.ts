@@ -20,9 +20,7 @@ import {
   ApiOperation,
   ApiTags,
 } from "@nestjs/swagger";
-import { diskStorage } from "multer";
-import { extname, join } from "path";
-import { randomUUID } from "crypto";
+import { memoryStorage } from "multer";
 
 import { LessonsService } from "./lessons.service";
 import { CreateLessonDto, UpdateLessonDto } from "./dto/lesson.dto";
@@ -116,12 +114,7 @@ export class LessonsController {
   })
   @UseInterceptors(
     FileInterceptor("file", {
-      storage: diskStorage({
-        destination: (_req, _file, cb) =>
-          cb(null, join(process.cwd(), process.env.UPLOAD_DIR ?? "./uploads")),
-        filename: (_req, file, cb) =>
-          cb(null, `lesson-${randomUUID()}${extname(file.originalname)}`),
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 500 * 1024 * 1024 },
     }),
   )

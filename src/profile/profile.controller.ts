@@ -18,9 +18,7 @@ import {
   ApiOperation,
   ApiTags,
 } from "@nestjs/swagger";
-import { diskStorage } from "multer";
-import { extname, join } from "path";
-import { randomUUID } from "crypto";
+import { memoryStorage } from "multer";
 
 import { ProfileService } from "./profile.service";
 import {
@@ -69,12 +67,7 @@ export class ProfileController {
   @ApiBody({ type: UploadAvatarDto })
   @UseInterceptors(
     FileInterceptor("file", {
-      storage: diskStorage({
-        destination: (_req, _file, cb) =>
-          cb(null, join(process.cwd(), process.env.UPLOAD_DIR ?? "./uploads")),
-        filename: (_req, file, cb) =>
-          cb(null, `avatar-${randomUUID()}${extname(file.originalname)}`),
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 },
     }),
   )

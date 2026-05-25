@@ -16,6 +16,7 @@ import { Course } from "../courses/course.entity";
 import { Certificate } from "./certificate.entity";
 import { ChangePasswordDto, UpdateProfileDto } from "./dto/profile.dto";
 import { Paginated, parsePagination } from "../common/pagination";
+import { StorageService } from "../common/storage/storage.service";
 
 export interface ProfileView {
   id: string;
@@ -52,6 +53,7 @@ export class ProfileService {
     @InjectRepository(Course) private readonly courses: Repository<Course>,
     @InjectRepository(Certificate) private readonly certificateRepo: Repository<Certificate>,
     private readonly cfg: ConfigService,
+    private readonly storage: StorageService,
   ) {}
 
   async me(userId: string): Promise<ProfileView> {
@@ -88,14 +90,17 @@ export class ProfileService {
     const u = await this.users.findOne({ where: { id: userId } });
     if (!u) throw new NotFoundException("Foydalanuvchi topilmadi");
     if (!file) throw new BadRequestException("Fayl yuborilmadi");
-    const publicUrl = this.cfg.get<string>("PUBLIC_URL") ?? "";
-    u.avatar = `${publicUrl}/uploads/${file.filename}`;
+
+    if (u.avatar) await this.storage.delete(u.avatar);
+    const stored = await this.storage.upload(file, { prefix: "avatar" });
+    u.avatar = stored.url;
     return this.toView(await this.users.save(u));
   }
 
   async deleteAvatar(userId: string): Promise<void> {
     const u = await this.users.findOne({ where: { id: userId } });
     if (!u) throw new NotFoundException("Foydalanuvchi topilmadi");
+    if (u.avatar) await this.storage.delete(u.avatar);
     u.avatar = null;
     await this.users.save(u);
   }

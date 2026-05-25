@@ -6,6 +6,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { join } from "path";
 
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
+import { StorageModule } from "./common/storage/storage.module";
 
 import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
@@ -88,6 +89,7 @@ import { Certificate } from "./profile/certificate.entity";
         },
       ],
     }),
+    StorageModule,
     AuthModule,
     UsersModule,
     CoursesModule,

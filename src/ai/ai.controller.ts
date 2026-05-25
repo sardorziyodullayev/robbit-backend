@@ -13,9 +13,7 @@ import {
   ApiOperation,
   ApiTags,
 } from "@nestjs/swagger";
-import { diskStorage } from "multer";
-import { extname, join } from "path";
-import { randomUUID } from "crypto";
+import { memoryStorage } from "multer";
 
 import { AiService } from "./ai.service";
 import {
@@ -55,12 +53,7 @@ export class AiController {
   @ApiBody({ type: EvaluateImageDto })
   @UseInterceptors(
     FileInterceptor("image", {
-      storage: diskStorage({
-        destination: (_req, _file, cb) =>
-          cb(null, join(process.cwd(), process.env.UPLOAD_DIR ?? "./uploads")),
-        filename: (_req, file, cb) =>
-          cb(null, `ai-${randomUUID()}${extname(file.originalname)}`),
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 },
     }),
   )
