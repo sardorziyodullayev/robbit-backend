@@ -40,6 +40,8 @@ services:
         value: "*"
       - key: UPLOAD_DIR
         value: ./uploads
+      - key: PUBLIC_URL
+        value: https://robbit-backend.onrender.com
       - key: SEED_ON_START
         value: "true"
       - key: ADMIN_USERNAME
