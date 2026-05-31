@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 
@@ -11,6 +16,10 @@ import {
   CreateTestDto,
   SubmitTestDto,
 } from "./dto/test.dto";
+import { OpenAiService } from "../ai/openai.service";
+
+// Ochiq/kod savollar AI bahosi shu foizdan yuqori bo'lsa "to'g'ri" hisoblanadi.
+const AI_PASS_THRESHOLD = 60;
 
 export interface QuestionView {
   id: number;
@@ -52,11 +61,14 @@ export interface AttemptResultView {
 
 @Injectable()
 export class TestsService {
+  private readonly logger = new Logger(TestsService.name);
+
   constructor(
     @InjectRepository(Test) private readonly tests: Repository<Test>,
     @InjectRepository(Question) private readonly questions: Repository<Question>,
     @InjectRepository(Attempt) private readonly attempts: Repository<Attempt>,
     @InjectRepository(Course) private readonly courses: Repository<Course>,
+    private readonly openai: OpenAiService,
   ) {}
 
   async byCourse(courseId: number): Promise<TestView[]> {
@@ -108,16 +120,33 @@ export class TestsService {
       const q = byId.get(a.questionId);
       if (!q) continue;
       const correctAnswer = q.correctAnswer ?? undefined;
-      const isCorrect = this.isAnswerCorrect(q, a.answer);
-      if (isCorrect) score += 1;
-      details.push({
-        questionId: a.questionId,
-        userAnswer: a.answer,
-        correctAnswer,
-        isCorrect,
-      });
+
+      if (q.type === "multiple_choice") {
+        // Variantli savol — aniq solishtirish (1 yoki 0 ball).
+        const isCorrect = this.isAnswerCorrect(q, a.answer);
+        if (isCorrect) score += 1;
+        details.push({
+          questionId: a.questionId,
+          userAnswer: a.answer,
+          correctAnswer,
+          isCorrect,
+        });
+      } else {
+        // Ochiq / kod savol — AI bilan baholash (qisman ball: aiScore/100).
+        const { aiScore, aiFeedback } = await this.evaluateOpenAnswer(q, a.answer);
+        score += aiScore / 100;
+        details.push({
+          questionId: a.questionId,
+          userAnswer: a.answer,
+          correctAnswer,
+          isCorrect: aiScore >= AI_PASS_THRESHOLD,
+          aiScore,
+          aiFeedback,
+        });
+      }
     }
     const maxScore = test.questions.length;
+    score = Math.round(score * 100) / 100;
     const percent = maxScore === 0 ? 0 : Math.round((score / maxScore) * 100);
     const attempt = this.attempts.create({
       testId,
@@ -157,6 +186,36 @@ export class TestsService {
   private isAnswerCorrect(q: Question, userAnswer: string): boolean {
     if (!q.correctAnswer) return false;
     return q.correctAnswer.trim().toLowerCase() === userAnswer.trim().toLowerCase();
+  }
+
+  /**
+   * Ochiq yoki kod savolini AI orqali baholaydi. Bo'sh javob uchun API'ni
+   * bezovta qilmaymiz. AI xizmati ishlamasa, butun submit yiqilmasligi uchun
+   * xatoni yutib, 0 ball va izoh qaytaramiz (qisman buzilishga chidamlilik).
+   */
+  private async evaluateOpenAnswer(
+    q: Question,
+    userAnswer: string,
+  ): Promise<{ aiScore: number; aiFeedback: string }> {
+    if (!userAnswer || !userAnswer.trim()) {
+      return { aiScore: 0, aiFeedback: "Javob bo'sh." };
+    }
+    try {
+      const result = await this.openai.evaluateAnswer({
+        question: q.text,
+        answer: userAnswer,
+        isCode: q.type === "code",
+      });
+      return { aiScore: result.score, aiFeedback: result.feedback };
+    } catch (err) {
+      this.logger.warn(
+        `AI baholash muvaffaqiyatsiz (questionId=${q.id}): ${(err as Error).message}`,
+      );
+      return {
+        aiScore: 0,
+        aiFeedback: "AI baholash vaqtincha mavjud emas, qo'lda tekshirilsin.",
+      };
+    }
   }
 
   private toView(t: Test, withAnswers: boolean): TestView {
