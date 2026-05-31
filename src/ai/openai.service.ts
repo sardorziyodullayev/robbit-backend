@@ -21,6 +21,13 @@ export interface GeneratedQuestion {
   correctAnswer: string;
 }
 
+export interface EvaluationResult {
+  score: number;
+  feedback: string;
+}
+
+type ChatMessage = { role: "system" | "user"; content: unknown };
+
 interface OpenAiChatResponse {
   choices?: { message?: { content?: string } }[];
 }
@@ -29,10 +36,10 @@ const MAX_QUESTIONS = 20;
 const REQUEST_TIMEOUT_MS = 60_000;
 
 /**
- * OpenAI (ChatGPT) chat-completions API orqali mavzuga mos test savollarini
- * generatsiya qiladi. Tashqi SDK ishlatmaydi — Node 20+ ning global fetch'idan
- * foydalanadi. OPENAI_API_KEY o'rnatilmagan bo'lsa, savol generatsiya so'ralganda
- * tushunarli xato qaytaradi (fail-fast).
+ * OpenAI (ChatGPT) chat-completions API orqali ishlovchi xizmat: mavzuga mos test
+ * savollarini generatsiya qiladi va foydalanuvchi javoblarini (matn, kod, rasm)
+ * baholaydi. Tashqi SDK ishlatmaydi — Node 20+ ning global fetch'idan foydalanadi.
+ * OPENAI_API_KEY o'rnatilmagan bo'lsa, har bir so'rovda tushunarli 503 qaytaradi.
  */
 @Injectable()
 export class OpenAiService {
@@ -40,22 +47,111 @@ export class OpenAiService {
 
   constructor(private readonly cfg: ConfigService) {}
 
+  // ─── Test generatsiyasi ────────────────────────────────────────────────
+
   async generateQuestions(
     params: GenerateQuestionsParams,
   ): Promise<GeneratedQuestion[]> {
+    const count = Math.min(Math.max(params.count, 1), MAX_QUESTIONS);
+    const { systemPrompt, userPrompt } = this.buildGeneratePrompts({
+      ...params,
+      count,
+    });
+
+    const content = await this.chatJson([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
+
+    return this.parseQuestions(content, count);
+  }
+
+  // ─── Javoblarni baholash ───────────────────────────────────────────────
+
+  async evaluateAnswer(params: {
+    question: string;
+    answer: string;
+    language?: string;
+    isCode?: boolean;
+  }): Promise<EvaluationResult> {
+    const { question, answer, language, isCode } = params;
+    const kind = isCode
+      ? `dasturlash kodi${language ? ` (${language})` : ""}`
+      : "matnli javob";
+
+    const systemPrompt = [
+      "Sen adolatli va tajribali imtihon oluvchisan.",
+      `Foydalanuvchining ${kind} ko'rinishidagi javobini savolga nisbatan baholaysan.`,
+      isCode
+        ? "Kodning to'g'riligi, mantiq, samaradorlik va savolga mosligini hisobga ol."
+        : "Javobning to'g'riligi, to'liqligi va savolga mosligini hisobga ol.",
+      "Faqat JSON qaytar, izohsiz.",
+    ].join(" ");
+
+    const userPrompt = [
+      `Savol: ${question}`,
+      `Javob: ${answer}`,
+      "",
+      "Quyidagi JSON sxemasida baho ber:",
+      '{ "score": <0 dan 100 gacha butun son>, "feedback": "<qisqa izoh, o\'zbek tilida>" }',
+    ].join("\n");
+
+    const content = await this.chatJson([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
+
+    return this.parseEvaluation(content);
+  }
+
+  async evaluateImageAnswer(params: {
+    question: string;
+    imageDataUri: string;
+  }): Promise<EvaluationResult> {
+    const { question, imageDataUri } = params;
+
+    const systemPrompt = [
+      "Sen adolatli va tajribali imtihon oluvchisan.",
+      "Foydalanuvchi yuborgan rasmni savolga nisbatan tahlil qilib baholaysan.",
+      "Rasm mazmunini diqqat bilan ko'rib chiq.",
+      "Faqat JSON qaytar, izohsiz.",
+    ].join(" ");
+
+    const content = await this.chatJson([
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: [
+              `Savol: ${question || "Rasmni baholang."}`,
+              "",
+              "Quyidagi JSON sxemasida baho ber:",
+              '{ "score": <0 dan 100 gacha butun son>, "feedback": "<qisqa izoh, o\'zbek tilida>" }',
+            ].join("\n"),
+          },
+          { type: "image_url", image_url: { url: imageDataUri } },
+        ],
+      },
+    ]);
+
+    return this.parseEvaluation(content);
+  }
+
+  // ─── Past darajadagi API chaqiruvi ─────────────────────────────────────
+
+  private async chatJson(messages: ChatMessage[]): Promise<string> {
     const apiKey = this.cfg.get<string>("OPENAI_API_KEY");
     if (!apiKey || !apiKey.trim()) {
       throw new ServiceUnavailableException(
-        "AI test generatsiyasi sozlanmagan: OPENAI_API_KEY o'rnatilmagan.",
+        "AI sozlanmagan: OPENAI_API_KEY o'rnatilmagan.",
       );
     }
     const model = this.cfg.get<string>("OPENAI_MODEL") ?? "gpt-4o-mini";
     const baseUrl = (
       this.cfg.get<string>("OPENAI_BASE_URL") ?? "https://api.openai.com/v1"
     ).replace(/\/$/, "");
-
-    const count = Math.min(Math.max(params.count, 1), MAX_QUESTIONS);
-    const { systemPrompt, userPrompt } = this.buildPrompts({ ...params, count });
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -70,12 +166,9 @@ export class OpenAiService {
         },
         body: JSON.stringify({
           model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
+          messages,
           response_format: { type: "json_object" },
-          temperature: 0.7,
+          temperature: 0.4,
         }),
         signal: controller.signal,
       });
@@ -84,7 +177,9 @@ export class OpenAiService {
         (err as Error).name === "AbortError"
           ? "vaqt tugadi (timeout)"
           : (err as Error).message;
-      throw new ServiceUnavailableException(`AI xizmatiga ulanib bo'lmadi: ${reason}`);
+      throw new ServiceUnavailableException(
+        `AI xizmatiga ulanib bo'lmadi: ${reason}`,
+      );
     } finally {
       clearTimeout(timer);
     }
@@ -102,11 +197,12 @@ export class OpenAiService {
     if (!content) {
       throw new ServiceUnavailableException("AI bo'sh javob qaytardi");
     }
-
-    return this.parseQuestions(content, count);
+    return content;
   }
 
-  private buildPrompts(params: GenerateQuestionsParams & { count: number }) {
+  // ─── Prompt va parsing yordamchilari ──────────────────────────────────
+
+  private buildGeneratePrompts(params: GenerateQuestionsParams & { count: number }) {
     const { topic, count, mode, courseTitle } = params;
     const courseLine = courseTitle ? `Kurs konteksti: "${courseTitle}".` : "";
 
@@ -156,14 +252,7 @@ export class OpenAiService {
   }
 
   private parseQuestions(content: string, expected: number): GeneratedQuestion[] {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(content);
-    } catch {
-      this.logger.error(`AI JSON parse xatosi: ${content.slice(0, 300)}`);
-      throw new ServiceUnavailableException("AI javobini o'qib bo'lmadi (JSON emas)");
-    }
-
+    const parsed = this.safeParse(content);
     const rawList = (parsed as { questions?: unknown }).questions;
     if (!Array.isArray(rawList) || rawList.length === 0) {
       throw new ServiceUnavailableException("AI savollar ro'yxatini qaytarmadi");
@@ -213,5 +302,36 @@ export class OpenAiService {
     const correctAnswer = exact ?? ciMatch ?? options[0];
 
     return { text, type: "multiple_choice", options, correctAnswer };
+  }
+
+  private parseEvaluation(content: string): EvaluationResult {
+    const parsed = this.safeParse(content) as {
+      score?: unknown;
+      feedback?: unknown;
+    };
+
+    const rawScore =
+      typeof parsed.score === "number"
+        ? parsed.score
+        : Number(parsed.score);
+    const score = Number.isFinite(rawScore)
+      ? Math.min(100, Math.max(0, Math.round(rawScore)))
+      : 0;
+
+    const feedback =
+      typeof parsed.feedback === "string" && parsed.feedback.trim()
+        ? parsed.feedback.trim()
+        : "AI izoh qaytarmadi.";
+
+    return { score, feedback };
+  }
+
+  private safeParse(content: string): unknown {
+    try {
+      return JSON.parse(content);
+    } catch {
+      this.logger.error(`AI JSON parse xatosi: ${content.slice(0, 300)}`);
+      throw new ServiceUnavailableException("AI javobini o'qib bo'lmadi (JSON emas)");
+    }
   }
 }

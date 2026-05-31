@@ -59,34 +59,24 @@ export class AiService {
   }
 
   evaluateText(dto: EvaluateTextDto) {
-    return this.heuristicEvaluate(dto.question, dto.answer);
+    return this.openai.evaluateAnswer({
+      question: dto.question,
+      answer: dto.answer,
+    });
   }
 
   evaluateCode(dto: EvaluateCodeDto) {
-    const base = this.heuristicEvaluate(dto.question, dto.code);
-    return {
-      ...base,
-      feedback: `${base.feedback} (${dto.language ?? "code"})`,
-    };
+    return this.openai.evaluateAnswer({
+      question: dto.question,
+      answer: dto.code,
+      language: dto.language,
+      isCode: true,
+    });
   }
 
   evaluateImage(question: string, file?: Express.Multer.File) {
     if (!file) throw new BadRequestException("Rasm yuborilmadi");
-    return this.heuristicEvaluate(question, file.originalname);
-  }
-
-  private heuristicEvaluate(question: string, answer: string) {
-    const q = question.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
-    const a = answer.toLowerCase();
-    const matched = q.filter((w) => a.includes(w)).length;
-    const ratio = q.length === 0 ? 0.5 : matched / q.length;
-    const score = Math.round(50 + ratio * 50);
-    const feedback =
-      score >= 80
-        ? "Yaxshi javob, savolning asosiy fikrlarini qamrab olgan."
-        : score >= 60
-          ? "O'rtacha javob, ba'zi tafsilotlar qo'shilsa yaxshi bo'ladi."
-          : "Javob etarli emas, savolga to'liq mos kelmagan.";
-    return { score, feedback };
+    const imageDataUri = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
+    return this.openai.evaluateImageAnswer({ question, imageDataUri });
   }
 }
