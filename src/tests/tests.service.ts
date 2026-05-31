@@ -17,6 +17,8 @@ import {
   SubmitTestDto,
 } from "./dto/test.dto";
 import { OpenAiService } from "../ai/openai.service";
+import { EnrollmentService } from "../enrollment/enrollment.service";
+import { AuthenticatedUser } from "../common/interfaces/jwt-payload.interface";
 
 // Ochiq/kod savollar AI bahosi shu foizdan yuqori bo'lsa "to'g'ri" hisoblanadi.
 const AI_PASS_THRESHOLD = 60;
@@ -69,6 +71,7 @@ export class TestsService {
     @InjectRepository(Attempt) private readonly attempts: Repository<Attempt>,
     @InjectRepository(Course) private readonly courses: Repository<Course>,
     private readonly openai: OpenAiService,
+    private readonly enrollment: EnrollmentService,
   ) {}
 
   async byCourse(courseId: number): Promise<TestView[]> {
@@ -107,12 +110,19 @@ export class TestsService {
     return this.getOne(saved.id, true);
   }
 
-  async submit(testId: number, userId: string, dto: SubmitTestDto): Promise<AttemptResultView> {
+  async submit(
+    testId: number,
+    user: AuthenticatedUser,
+    dto: SubmitTestDto,
+  ): Promise<AttemptResultView> {
     const test = await this.tests.findOne({
       where: { id: testId },
       relations: ["questions"],
     });
     if (!test) throw new NotFoundException("Test topilmadi");
+    // Faqat kursga yozilgan talaba (yoki admin/mentor) test topshira oladi.
+    await this.enrollment.assertCanAccessCourse(user, test.courseId);
+    const userId = user.id;
     const byId = new Map(test.questions.map((q) => [q.id, q]));
     const details: AttemptAnswerDetail[] = [];
     let score = 0;

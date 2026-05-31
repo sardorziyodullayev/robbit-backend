@@ -12,6 +12,8 @@ import { LessonProgress } from "./lesson-progress.entity";
 import { Course } from "../courses/course.entity";
 import { CreateLessonDto, UpdateLessonDto } from "./dto/lesson.dto";
 import { StorageService } from "../common/storage/storage.service";
+import { EnrollmentService } from "../enrollment/enrollment.service";
+import { AuthenticatedUser } from "../common/interfaces/jwt-payload.interface";
 
 export interface LessonView {
   id: number;
@@ -38,32 +40,28 @@ export class LessonsService {
     @InjectRepository(Course) private readonly courses: Repository<Course>,
     private readonly cfg: ConfigService,
     private readonly storage: StorageService,
+    private readonly enrollment: EnrollmentService,
   ) {}
 
-  async byCourse(courseId: number, userId?: string): Promise<LessonView[]> {
+  async byCourse(courseId: number, user: AuthenticatedUser): Promise<LessonView[]> {
+    // Faqat kursga yozilgan talaba (yoki admin/mentor) darslarni ko'ra oladi.
+    await this.enrollment.assertCanAccessCourse(user, courseId);
     const items = await this.lessons.find({
       where: { courseId },
       order: { order: "ASC", id: "ASC" },
     });
-    let completedIds = new Set<number>();
-    if (userId) {
-      const progress = await this.progress.find({
-        where: { userId },
-      });
-      completedIds = new Set(progress.map((p) => p.lessonId));
-    }
+    const progress = await this.progress.find({ where: { userId: user.id } });
+    const completedIds = new Set(progress.map((p) => p.lessonId));
     return items.map((l) => this.toView(l, completedIds.has(l.id)));
   }
 
-  async getOne(id: number, userId?: string): Promise<LessonView> {
+  async getOne(id: number, user: AuthenticatedUser): Promise<LessonView> {
     const l = await this.lessons.findOne({ where: { id } });
     if (!l) throw new NotFoundException("Dars topilmadi");
-    let isCompleted = false;
-    if (userId) {
-      isCompleted = !!(await this.progress.findOne({
-        where: { userId, lessonId: id },
-      }));
-    }
+    await this.enrollment.assertCanAccessCourse(user, l.courseId);
+    const isCompleted = !!(await this.progress.findOne({
+      where: { userId: user.id, lessonId: id },
+    }));
     return this.toView(l, isCompleted);
   }
 
@@ -105,15 +103,22 @@ export class LessonsService {
     await this.lessons.remove(l);
   }
 
-  async markCompleted(lessonId: number, userId: string): Promise<void> {
+  async markCompleted(lessonId: number, user: AuthenticatedUser): Promise<void> {
     const l = await this.lessons.findOne({ where: { id: lessonId } });
     if (!l) throw new NotFoundException("Dars topilmadi");
+    await this.enrollment.assertCanAccessCourse(user, l.courseId);
+    const userId = user.id;
     const existing = await this.progress.findOne({ where: { userId, lessonId } });
     if (existing) return;
     await this.progress.save(this.progress.create({ userId, lessonId }));
   }
 
-  async courseProgress(courseId: number, userId: string): Promise<CourseProgressView> {
+  async courseProgress(
+    courseId: number,
+    user: AuthenticatedUser,
+  ): Promise<CourseProgressView> {
+    await this.enrollment.assertCanAccessCourse(user, courseId);
+    const userId = user.id;
     const totalLessons = await this.lessons.count({ where: { courseId } });
     if (totalLessons === 0) {
       return { courseId, totalLessons: 0, completedLessons: 0, percent: 0 };

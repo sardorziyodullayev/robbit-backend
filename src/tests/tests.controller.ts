@@ -65,6 +65,6 @@ export class TestsController {
     @Body() dto: SubmitTestDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.service.submit(id, user.id, dto);
+    return this.service.submit(id, user, dto);
   }
 }

@@ -41,7 +41,7 @@ export class LessonsController {
     @Param("courseId", ParseIntPipe) courseId: number,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.service.byCourse(courseId, user.id);
+    return this.service.byCourse(courseId, user);
   }
 
   @Get("course/:courseId/progress")
@@ -50,7 +50,7 @@ export class LessonsController {
     @Param("courseId", ParseIntPipe) courseId: number,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.service.courseProgress(courseId, user.id);
+    return this.service.courseProgress(courseId, user);
   }
 
   @Get(":id")
@@ -59,7 +59,7 @@ export class LessonsController {
     @Param("id", ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.service.getOne(id, user.id);
+    return this.service.getOne(id, user);
   }
 
   @UseGuards(RolesGuard)
@@ -96,7 +96,7 @@ export class LessonsController {
     @Param("id", ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.service.markCompleted(id, user.id);
+    await this.service.markCompleted(id, user);
   }
 
   @UseGuards(RolesGuard)

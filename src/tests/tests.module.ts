@@ -8,11 +8,13 @@ import { Course } from "../courses/course.entity";
 import { TestsController } from "./tests.controller";
 import { TestsService } from "./tests.service";
 import { OpenAiModule } from "../ai/openai.module";
+import { EnrollmentModule } from "../enrollment/enrollment.module";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Test, Question, Attempt, Course]),
     OpenAiModule,
+    EnrollmentModule,
   ],
   controllers: [TestsController],
   providers: [TestsService],

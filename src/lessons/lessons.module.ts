@@ -6,9 +6,13 @@ import { LessonProgress } from "./lesson-progress.entity";
 import { Course } from "../courses/course.entity";
 import { LessonsController } from "./lessons.controller";
 import { LessonsService } from "./lessons.service";
+import { EnrollmentModule } from "../enrollment/enrollment.module";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Lesson, LessonProgress, Course])],
+  imports: [
+    TypeOrmModule.forFeature([Lesson, LessonProgress, Course]),
+    EnrollmentModule,
+  ],
   controllers: [LessonsController],
   providers: [LessonsService],
   exports: [LessonsService],
