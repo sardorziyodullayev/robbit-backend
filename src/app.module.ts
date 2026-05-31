@@ -7,6 +7,7 @@ import { join } from "path";
 
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { StorageModule } from "./common/storage/storage.module";
+import { HealthModule } from "./health/health.module";
 
 import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
@@ -90,6 +91,7 @@ import { Certificate } from "./profile/certificate.entity";
       ],
     }),
     StorageModule,
+    HealthModule,
     AuthModule,
     UsersModule,
     CoursesModule,
