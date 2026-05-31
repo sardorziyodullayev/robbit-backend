@@ -50,7 +50,14 @@ import { Certificate } from "./profile/certificate.entity";
           Attempt,
           Certificate,
         ];
-        const synchronize = cfg.get<string>("DB_SYNC") !== "false";
+        // DB_SYNC aniq belgilangan bo'lsa — faqat "true" qiymatida yoqamiz.
+        // Belgilanmagan bo'lsa — xavfsizlik uchun faqat production'dan tashqarida
+        // (dev/test) avtomatik sinxronlashtiramiz. Production'da synchronize:true
+        // sxema o'zgarishlarida ma'lumot yo'qotishiga olib kelishi mumkin.
+        const dbSync = cfg.get<string>("DB_SYNC");
+        const isProduction = cfg.get<string>("NODE_ENV") === "production";
+        const synchronize =
+          dbSync !== undefined ? dbSync === "true" : !isProduction;
         const driver = cfg.get<string>("DB_DRIVER") ?? "postgres";
 
         if (driver === "sqlite") {

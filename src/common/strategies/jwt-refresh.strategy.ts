@@ -4,6 +4,7 @@ import { ConfigService } from "@nestjs/config";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { Request } from "express";
 import { AuthenticatedUser, JwtPayload } from "../interfaces/jwt-payload.interface";
+import { requireConfig } from "../config/require-config";
 
 export interface RefreshTokenUser extends AuthenticatedUser {
   refreshToken: string;
@@ -15,7 +16,7 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, "jwt-refresh"
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: cfg.get<string>("JWT_REFRESH_SECRET") ?? "refresh-secret",
+      secretOrKey: requireConfig(cfg, "JWT_REFRESH_SECRET"),
       passReqToCallback: true,
     });
   }

@@ -12,6 +12,7 @@ import { User } from "../users/user.entity";
 import { JwtPayload, Role } from "../common/interfaces/jwt-payload.interface";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
+import { requireConfig } from "../common/config/require-config";
 
 export interface AuthUserView {
   id: string;
@@ -122,11 +123,11 @@ export class AuthService {
       role: user.role,
     };
     const accessToken = await this.jwt.signAsync(payload, {
-      secret: this.cfg.get<string>("JWT_ACCESS_SECRET") ?? "access-secret",
+      secret: requireConfig(this.cfg, "JWT_ACCESS_SECRET"),
       expiresIn: this.cfg.get<string>("JWT_ACCESS_EXPIRES") ?? "15m",
     });
     const refreshToken = await this.jwt.signAsync(payload, {
-      secret: this.cfg.get<string>("JWT_REFRESH_SECRET") ?? "refresh-secret",
+      secret: requireConfig(this.cfg, "JWT_REFRESH_SECRET"),
       expiresIn: this.cfg.get<string>("JWT_REFRESH_EXPIRES") ?? "7d",
     });
     return { accessToken, refreshToken };
