@@ -7,6 +7,7 @@ import { Question } from "../tests/question.entity";
 import { Course } from "../courses/course.entity";
 import { EvaluateCodeDto, EvaluateTextDto, GenerateTestDto } from "./dto/ai.dto";
 import { TestsService } from "../tests/tests.service";
+import { OpenAiService } from "./openai.service";
 
 @Injectable()
 export class AiService {
@@ -15,6 +16,7 @@ export class AiService {
     @InjectRepository(Question) private readonly questions: Repository<Question>,
     @InjectRepository(Course) private readonly courses: Repository<Course>,
     private readonly testsService: TestsService,
+    private readonly openai: OpenAiService,
   ) {}
 
   async generateTest(dto: GenerateTestDto) {
@@ -23,6 +25,15 @@ export class AiService {
     const count = dto.count ?? 5;
     const mode = dto.type ?? "multiple_choice";
 
+    // OpenAI'dan mavzuga mos haqiqiy savollarni olamiz. Bazada test yaratishdan
+    // OLDIN chaqiramiz — AI xato bersa, bo'sh test qolib ketmasligi uchun.
+    const generatedQuestions = await this.openai.generateQuestions({
+      topic: dto.topic,
+      count,
+      mode,
+      courseTitle: course.title,
+    });
+
     const test = this.tests.create({
       title: `AI: ${dto.topic}`,
       courseId: dto.courseId,
@@ -30,39 +41,20 @@ export class AiService {
     });
     const saved = await this.tests.save(test);
 
-    const generated: Question[] = [];
-    for (let i = 0; i < count; i++) {
-      const type =
-        mode === "mixed" ? (i % 2 === 0 ? "multiple_choice" : "open_ended") : mode;
-      if (type === "multiple_choice") {
-        const correctIdx = i % 4;
-        const options = ["A", "B", "C", "D"].map(
-          (letter, idx) => `${letter}) ${dto.topic} variant ${idx + 1}`,
-        );
-        generated.push(
-          this.questions.create({
-            testId: saved.id,
-            text: `${dto.topic} bo'yicha ${i + 1}-savol`,
-            type: "multiple_choice",
-            optionsJson: JSON.stringify(options),
-            correctAnswer: options[correctIdx],
-            order: i + 1,
-          }),
-        );
-      } else {
-        generated.push(
-          this.questions.create({
-            testId: saved.id,
-            text: `${dto.topic} mavzusi bo'yicha ${i + 1}-ochiq savol`,
-            type: "open_ended",
-            optionsJson: null,
-            correctAnswer: dto.topic,
-            order: i + 1,
-          }),
-        );
-      }
-    }
-    await this.questions.save(generated);
+    const questions = generatedQuestions.map((q, idx) =>
+      this.questions.create({
+        testId: saved.id,
+        text: q.text,
+        type: q.type,
+        optionsJson:
+          q.type === "multiple_choice" && q.options
+            ? JSON.stringify(q.options)
+            : null,
+        correctAnswer: q.correctAnswer || null,
+        order: idx + 1,
+      }),
+    );
+    await this.questions.save(questions);
     return this.testsService.getOne(saved.id, true);
   }
 

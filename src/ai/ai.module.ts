@@ -7,11 +7,12 @@ import { Course } from "../courses/course.entity";
 import { Attempt } from "../tests/attempt.entity";
 import { AiController } from "./ai.controller";
 import { AiService } from "./ai.service";
+import { OpenAiService } from "./openai.service";
 import { TestsService } from "../tests/tests.service";
 
 @Module({
   imports: [TypeOrmModule.forFeature([Test, Question, Course, Attempt])],
   controllers: [AiController],
-  providers: [AiService, TestsService],
+  providers: [AiService, OpenAiService, TestsService],
 })
 export class AiModule {}

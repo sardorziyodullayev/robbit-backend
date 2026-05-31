@@ -53,6 +53,11 @@ services:
         sync: false
       - key: R2_PUBLIC_URL
         sync: false
+      # OpenAI (ChatGPT) — AI test generatsiyasi uchun. Kalitni Render dashboard'ida kiriting.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
       - key: SEED_ON_START
         value: "true"
       - key: ADMIN_USERNAME
