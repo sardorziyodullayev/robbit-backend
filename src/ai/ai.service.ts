@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 
@@ -11,6 +11,8 @@ import { OpenAiService } from "./openai.service";
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(
     @InjectRepository(Test) private readonly tests: Repository<Test>,
     @InjectRepository(Question) private readonly questions: Repository<Question>,
@@ -27,12 +29,26 @@ export class AiService {
 
     // OpenAI'dan mavzuga mos haqiqiy savollarni olamiz. Bazada test yaratishdan
     // OLDIN chaqiramiz — AI xato bersa, bo'sh test qolib ketmasligi uchun.
-    const generatedQuestions = await this.openai.generateQuestions({
-      topic: dto.topic,
-      count,
-      mode,
-      courseTitle: course.title,
-    });
+    let generatedQuestions;
+    try {
+      generatedQuestions = await this.openai.generateQuestions({
+        topic: dto.topic,
+        count,
+        mode,
+        courseTitle: course.title,
+      });
+    } catch (err) {
+      // AI (retry'lardan keyin ham) ishlamadi — shu kursdagi avval saqlangan
+      // testlardan tasodifiy bittasini zaxira sifatida qaytaramiz.
+      this.logger.warn(
+        `AI test generatsiyasi muvaffaqiyatsiz (courseId=${dto.courseId}): ` +
+          `${(err as Error).message}. Zaxira testdan foydalanamiz.`,
+      );
+      const fallback = await this.pickFallbackTest(dto.courseId);
+      if (fallback) return fallback;
+      // Zaxira ham yo'q bo'lsa, asl xatoni qaytaramiz.
+      throw err;
+    }
 
     const test = this.tests.create({
       title: `AI: ${dto.topic}`,
@@ -56,6 +72,25 @@ export class AiService {
     );
     await this.questions.save(questions);
     return this.testsService.getOne(saved.id, true);
+  }
+
+  /**
+   * AI ishlamay qolganda zaxira: shu kursdagi savolga ega testlardan birini
+   * tasodifiy tanlab qaytaradi. Bunday test bo'lmasa null qaytaradi.
+   */
+  private async pickFallbackTest(courseId: number) {
+    const candidates = await this.tests.find({
+      where: { courseId },
+      relations: ["questions"],
+      order: { createdAt: "DESC" },
+    });
+    const usable = candidates.filter((t) => (t.questions?.length ?? 0) > 0);
+    if (usable.length === 0) return null;
+    const pick = usable[Math.floor(Math.random() * usable.length)];
+    this.logger.log(
+      `Zaxira test tanlandi (id=${pick.id}, courseId=${courseId}).`,
+    );
+    return this.testsService.getOne(pick.id, true);
   }
 
   evaluateText(dto: EvaluateTextDto) {

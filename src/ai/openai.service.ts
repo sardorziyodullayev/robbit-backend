@@ -33,7 +33,17 @@ interface OpenAiChatResponse {
 }
 
 const MAX_QUESTIONS = 20;
-const REQUEST_TIMEOUT_MS = 60_000;
+const REQUEST_TIMEOUT_MS = 90_000;
+// Gemini/flash kabi modellar vaqti-vaqti bilan 429, bo'sh javob yoki noto'g'ri
+// JSON qaytaradi. Shu o'tkinchi nuqsonlarda butun so'rovni yiqitmasdan qayta urinamiz.
+const MAX_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 600;
+
+/**
+ * Qayta urinish ma'nosiz bo'lgan holatlar uchun (masalan, API kaliti yo'q).
+ * withRetry buni ushlamaydi — darhol yuqoriga uzatadi.
+ */
+class NonRetryableAiError extends ServiceUnavailableException {}
 
 /**
  * OpenAI (ChatGPT) chat-completions API orqali ishlovchi xizmat: mavzuga mos test
@@ -58,12 +68,15 @@ export class OpenAiService {
       count,
     });
 
-    const content = await this.chatJson([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ]);
-
-    return this.parseQuestions(content, count);
+    // chatJson + parse'ni birga retry qilamiz: bo'sh yoki buzuq JSON ham
+    // o'tkinchi nuqson — keyingi urinishda model to'g'ri javob berishi mumkin.
+    return this.withRetry("generateQuestions", async () => {
+      const content = await this.chatJson([
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ]);
+      return this.parseQuestions(content, count);
+    });
   }
 
   // ─── Javoblarni baholash ───────────────────────────────────────────────
@@ -96,12 +109,13 @@ export class OpenAiService {
       '{ "score": <0 dan 100 gacha butun son>, "feedback": "<qisqa izoh, o\'zbek tilida>" }',
     ].join("\n");
 
-    const content = await this.chatJson([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ]);
-
-    return this.parseEvaluation(content);
+    return this.withRetry("evaluateAnswer", async () => {
+      const content = await this.chatJson([
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ]);
+      return this.parseEvaluation(content);
+    });
   }
 
   async evaluateImageAnswer(params: {
@@ -144,7 +158,8 @@ export class OpenAiService {
   private async chatJson(messages: ChatMessage[]): Promise<string> {
     const apiKey = this.cfg.get<string>("OPENAI_API_KEY");
     if (!apiKey || !apiKey.trim()) {
-      throw new ServiceUnavailableException(
+      // Kalit yo'q bo'lsa qayta urinish foydasiz — darhol yuqoriga uzatamiz.
+      throw new NonRetryableAiError(
         "AI sozlanmagan: OPENAI_API_KEY o'rnatilmagan.",
       );
     }
@@ -198,6 +213,37 @@ export class OpenAiService {
       throw new ServiceUnavailableException("AI bo'sh javob qaytardi");
     }
     return content;
+  }
+
+  // ─── Qayta urinish (retry) ─────────────────────────────────────────────
+
+  /**
+   * fn'ni MAX_ATTEMPTS martagacha bajaradi. O'tkinchi AI nuqsonlarida
+   * (timeout, 429, 5xx, bo'sh/buzuq JSON) ortib boruvchi kechikish bilan qayta
+   * urinadi. NonRetryableAiError esa darhol yuqoriga uzatiladi.
+   */
+  private async withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastErr = err;
+        if (err instanceof NonRetryableAiError) throw err;
+        if (attempt < MAX_ATTEMPTS) {
+          const delay = RETRY_BASE_DELAY_MS * attempt;
+          this.logger.warn(
+            `${label}: ${attempt}-urinish muvaffaqiyatsiz (${(err as Error).message}). ${delay}ms dan keyin qayta urinamiz...`,
+          );
+          await this.sleep(delay);
+        }
+      }
+    }
+    throw lastErr;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // ─── Prompt va parsing yordamchilari ──────────────────────────────────
@@ -327,11 +373,32 @@ export class OpenAiService {
   }
 
   private safeParse(content: string): unknown {
-    try {
-      return JSON.parse(content);
-    } catch {
-      this.logger.error(`AI JSON parse xatosi: ${content.slice(0, 300)}`);
-      throw new ServiceUnavailableException("AI javobini o'qib bo'lmadi (JSON emas)");
+    // Avval to'g'ridan-to'g'ri, bo'lmasa tozalab urinamiz. Gemini/flash javobni
+    // ko'pincha ```json ... ``` ichida yoki oldidan/keyin matn bilan qaytaradi.
+    const candidates = [content, this.extractJson(content)];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        // keyingi nomzodga o'tamiz
+      }
     }
+    this.logger.error(`AI JSON parse xatosi: ${content.slice(0, 300)}`);
+    throw new ServiceUnavailableException("AI javobini o'qib bo'lmadi (JSON emas)");
+  }
+
+  /**
+   * Matn ichidan JSON qismini ajratib oladi: markdown ```json``` o'ramini olib
+   * tashlaydi, so'ng birinchi "{" dan oxirgi "}" gacha kesib oladi.
+   */
+  private extractJson(content: string): string | null {
+    let text = content.trim();
+    const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence) text = fence[1].trim();
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    return text.slice(start, end + 1);
   }
 }

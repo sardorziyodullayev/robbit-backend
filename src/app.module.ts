@@ -9,6 +9,7 @@ import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { StorageModule } from "./common/storage/storage.module";
 import { HealthModule } from "./health/health.module";
 import { EnrollmentModule } from "./enrollment/enrollment.module";
+import { InternshipModule } from "./internship/internship.module";
 
 import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
@@ -32,6 +33,8 @@ import { Question } from "./tests/question.entity";
 import { Attempt } from "./tests/attempt.entity";
 import { Certificate } from "./profile/certificate.entity";
 import { Enrollment } from "./enrollment/enrollment.entity";
+import { Internship } from "./internship/internship.entity";
+import { InternshipApplication } from "./internship/internship-application.entity";
 
 @Module({
   imports: [
@@ -52,6 +55,8 @@ import { Enrollment } from "./enrollment/enrollment.entity";
           Attempt,
           Certificate,
           Enrollment,
+          Internship,
+          InternshipApplication,
         ];
         // DB_SYNC aniq belgilangan bo'lsa — faqat "true" qiymatida yoqamiz.
         // Belgilanmagan bo'lsa — xavfsizlik uchun faqat production'dan tashqarida
@@ -103,6 +108,7 @@ import { Enrollment } from "./enrollment/enrollment.entity";
     StorageModule,
     HealthModule,
     EnrollmentModule,
+    InternshipModule,
     AuthModule,
     UsersModule,
     CoursesModule,
