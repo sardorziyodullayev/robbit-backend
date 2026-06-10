@@ -10,14 +10,26 @@ import { Course } from "./course.entity";
 import { Category } from "./category.entity";
 import { Review } from "./review.entity";
 import { Lesson } from "../lessons/lesson.entity";
+import { Enrollment } from "../enrollment/enrollment.entity";
+import { User } from "../users/user.entity";
 import {
   CreateCategoryDto,
   CreateCourseDto,
+  UpdateCategoryDto,
   UpdateCourseDto,
 } from "./dto/create-course.dto";
 import { CreateReviewDto } from "./dto/create-review.dto";
 import { ListCoursesDto } from "./dto/list-courses.dto";
 import { Paginated, parsePagination } from "../common/pagination";
+import { StorageService } from "../common/storage/storage.service";
+
+export interface CategoryView {
+  id: number;
+  name: string;
+  description: string | null;
+  courseCount: number;
+  createdAt?: string;
+}
 
 export interface CourseView {
   id: number;
@@ -26,9 +38,13 @@ export interface CourseView {
   price: number;
   categoryId: number;
   category?: Category;
+  mentorId?: string | null;
+  mentor?: { id: string; name: string } | null;
   isPublished: boolean;
   thumbnail?: string | null;
   averageRating?: number;
+  avgRating?: number | null;
+  enrollmentCount?: number;
   lessonCount?: number;
   createdAt: string;
   updatedAt: string;
@@ -41,6 +57,8 @@ export class CoursesService {
     @InjectRepository(Category) private readonly categories: Repository<Category>,
     @InjectRepository(Review) private readonly reviews: Repository<Review>,
     @InjectRepository(Lesson) private readonly lessons: Repository<Lesson>,
+    @InjectRepository(Enrollment) private readonly enrollments: Repository<Enrollment>,
+    private readonly storage: StorageService,
   ) {}
 
   async list(query: ListCoursesDto, includeUnpublished = false): Promise<Paginated<CourseView>> {
@@ -65,16 +83,51 @@ export class CoursesService {
     return this.toView(c);
   }
 
-  async listCategories(): Promise<Category[]> {
-    return this.categories.find({ order: { id: "ASC" } });
+  /* ─────────── Kategoriyalar ─────────── */
+  async listCategories(): Promise<CategoryView[]> {
+    const cats = await this.categories.find({ order: { id: "ASC" } });
+    return Promise.all(
+      cats.map(async (cat) => ({
+        id: cat.id,
+        name: cat.name,
+        description: cat.description ?? null,
+        courseCount: await this.courses.count({ where: { categoryId: cat.id } }),
+        createdAt: cat.createdAt?.toISOString(),
+      })),
+    );
   }
 
   async createCategory(dto: CreateCategoryDto): Promise<Category> {
     const exists = await this.categories.findOne({ where: { name: dto.name } });
     if (exists) throw new BadRequestException("Kategoriya allaqachon mavjud");
-    return this.categories.save(this.categories.create({ name: dto.name }));
+    return this.categories.save(
+      this.categories.create({ name: dto.name, description: dto.description ?? null }),
+    );
   }
 
+  async updateCategory(id: number, dto: UpdateCategoryDto): Promise<Category> {
+    const cat = await this.categories.findOne({ where: { id } });
+    if (!cat) throw new NotFoundException("Kategoriya topilmadi");
+    if (dto.name !== undefined && dto.name !== cat.name) {
+      const clash = await this.categories.findOne({ where: { name: dto.name } });
+      if (clash) throw new BadRequestException("Kategoriya nomi band");
+      cat.name = dto.name;
+    }
+    if (dto.description !== undefined) cat.description = dto.description ?? null;
+    return this.categories.save(cat);
+  }
+
+  async removeCategory(id: number): Promise<void> {
+    const cat = await this.categories.findOne({ where: { id } });
+    if (!cat) throw new NotFoundException("Kategoriya topilmadi");
+    const used = await this.courses.count({ where: { categoryId: id } });
+    if (used > 0) {
+      throw new BadRequestException("Kategoriyaga bog‘langan kurslar mavjud — avval ularni o‘chiring");
+    }
+    await this.categories.remove(cat);
+  }
+
+  /* ─────────── Kurslar ─────────── */
   async create(dto: CreateCourseDto): Promise<CourseView> {
     const category = await this.categories.findOne({ where: { id: dto.categoryId } });
     if (!category) throw new BadRequestException("Kategoriya topilmadi");
@@ -83,10 +136,11 @@ export class CoursesService {
       description: dto.description ?? null,
       price: dto.price ?? 0,
       categoryId: dto.categoryId,
+      mentorId: dto.mentorId ?? null,
       isPublished: false,
     });
     const saved = await this.courses.save(c);
-    return this.toView(saved);
+    return this.getOne(saved.id);
   }
 
   async update(id: number, dto: UpdateCourseDto): Promise<CourseView> {
@@ -100,26 +154,38 @@ export class CoursesService {
     if (dto.title !== undefined) c.title = dto.title;
     if (dto.description !== undefined) c.description = dto.description ?? null;
     if (dto.price !== undefined) c.price = dto.price;
-    const saved = await this.courses.save(c);
-    return this.toView(saved);
+    if (dto.mentorId !== undefined) c.mentorId = dto.mentorId ?? null;
+    await this.courses.save(c);
+    return this.getOne(id);
   }
 
   async remove(id: number): Promise<void> {
     const c = await this.courses.findOne({ where: { id } });
     if (!c) throw new NotFoundException("Kurs topilmadi");
+    await this.storage.delete(c.thumbnail);
     await this.courses.remove(c);
   }
 
-  setPublish(id: number, isPublished: boolean): Promise<CourseView> {
-    return this.update(id, {} as UpdateCourseDto).then(async () => {
-      const c = await this.courses.findOne({ where: { id } });
-      if (!c) throw new NotFoundException("Kurs topilmadi");
-      c.isPublished = isPublished;
-      const saved = await this.courses.save(c);
-      return this.toView(saved);
-    });
+  async attachThumbnail(id: number, file: Express.Multer.File): Promise<CourseView> {
+    if (!file) throw new BadRequestException("Fayl yuborilmadi");
+    const c = await this.courses.findOne({ where: { id } });
+    if (!c) throw new NotFoundException("Kurs topilmadi");
+    const stored = await this.storage.upload(file, { prefix: "course" });
+    await this.storage.delete(c.thumbnail);
+    c.thumbnail = stored.url;
+    await this.courses.save(c);
+    return this.getOne(id);
   }
 
+  async setPublish(id: number, isPublished: boolean): Promise<CourseView> {
+    const c = await this.courses.findOne({ where: { id } });
+    if (!c) throw new NotFoundException("Kurs topilmadi");
+    c.isPublished = isPublished;
+    await this.courses.save(c);
+    return this.getOne(id);
+  }
+
+  /* ─────────── Reviewlar ─────────── */
   async listReviews(courseId: number) {
     await this.assertExists(courseId);
     const items = await this.reviews.find({
@@ -162,9 +228,18 @@ export class CoursesService {
     if (!c) throw new NotFoundException("Kurs topilmadi");
   }
 
+  private mentorName(u: User | null): { id: string; name: string } | null {
+    if (!u) return null;
+    const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.username;
+    return { id: u.id, name };
+  }
+
   private async toView(c: Course): Promise<CourseView> {
-    const lessonCount = await this.lessons.count({ where: { courseId: c.id } });
-    const reviews = await this.reviews.find({ where: { courseId: c.id } });
+    const [lessonCount, reviews, enrollmentCount] = await Promise.all([
+      this.lessons.count({ where: { courseId: c.id } }),
+      this.reviews.find({ where: { courseId: c.id } }),
+      this.enrollments.count({ where: { courseId: c.id } }),
+    ]);
     const averageRating =
       reviews.length === 0
         ? 0
@@ -176,9 +251,13 @@ export class CoursesService {
       price: c.price,
       categoryId: c.categoryId,
       category: c.category,
+      mentorId: c.mentorId,
+      mentor: this.mentorName(c.mentor),
       isPublished: c.isPublished,
       thumbnail: c.thumbnail,
       averageRating: Number(averageRating.toFixed(2)),
+      avgRating: reviews.length === 0 ? null : Number(averageRating.toFixed(2)),
+      enrollmentCount,
       lessonCount,
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),

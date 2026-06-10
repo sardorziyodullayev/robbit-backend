@@ -3,19 +3,31 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { FileInterceptor } from "@nestjs/platform-express";
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
+import { memoryStorage } from "multer";
 
 import { CoursesService } from "./courses.service";
 import {
   CreateCategoryDto,
   CreateCourseDto,
+  UpdateCategoryDto,
   UpdateCourseDto,
 } from "./dto/create-course.dto";
 import { CreateReviewDto } from "./dto/create-review.dto";
@@ -61,6 +73,25 @@ export class CoursesController {
   @ApiOperation({ summary: "Yangi kategoriya yaratish" })
   createCategory(@Body() dto: CreateCategoryDto) {
     return this.service.createCategory(dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles("SUPER_ADMIN", "MENTOR")
+  @Patch("categories/:id")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Kategoriyani yangilash" })
+  updateCategory(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto) {
+    return this.service.updateCategory(id, dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles("SUPER_ADMIN", "MENTOR")
+  @HttpCode(204)
+  @Delete("categories/:id")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Kategoriyani o‘chirish" })
+  async removeCategory(@Param("id", ParseIntPipe) id: number) {
+    await this.service.removeCategory(id);
   }
 
   @Public()
@@ -116,6 +147,31 @@ export class CoursesController {
   @ApiOperation({ summary: "Kursni unpublish qilish" })
   unpublish(@Param("id", ParseIntPipe) id: number) {
     return this.service.setPublish(id, false);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles("SUPER_ADMIN", "MENTOR")
+  @Post(":id/thumbnail")
+  @ApiBearerAuth("access-token")
+  @ApiOperation({ summary: "Kurs uchun rasm (thumbnail) yuklash" })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: { file: { type: "string", format: "binary" } },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor("file", {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  uploadThumbnail(
+    @Param("id", ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.service.attachThumbnail(id, file);
   }
 
   @Public()

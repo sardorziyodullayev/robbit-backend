@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -51,6 +52,14 @@ export class LessonsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.service.courseProgress(courseId, user);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles("SUPER_ADMIN", "MENTOR")
+  @Get("admin/all")
+  @ApiOperation({ summary: "Admin/mentor uchun barcha darslar (kurs nomi bilan)" })
+  listAdmin(@Query() query: { page?: number; limit?: number; search?: string }) {
+    return this.service.listAdmin(query);
   }
 
   @Get(":id")

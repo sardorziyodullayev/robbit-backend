@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from "typeorm";
 import { Category } from "./category.entity";
+import { User } from "../users/user.entity";
 
 @Entity({ name: "courses" })
 export class Course {
@@ -29,6 +30,14 @@ export class Course {
 
   @Column()
   categoryId!: number;
+
+  // Kursga mas'ul mentor (ixtiyoriy).
+  @ManyToOne(() => User, { nullable: true, onDelete: "SET NULL", eager: true })
+  @JoinColumn({ name: "mentorId" })
+  mentor!: User | null;
+
+  @Column({ type: "varchar", nullable: true })
+  mentorId!: string | null;
 
   @Column({ default: false })
   isPublished!: boolean;

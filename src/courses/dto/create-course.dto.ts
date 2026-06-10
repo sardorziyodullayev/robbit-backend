@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsInt, IsNumber, IsOptional, IsString, Min } from "class-validator";
+import { IsInt, IsNumber, IsOptional, IsString, IsUUID, Min } from "class-validator";
 
 export class CreateCourseDto {
   @ApiProperty({ example: "JavaScript boshlang‘ich" })
@@ -20,6 +20,11 @@ export class CreateCourseDto {
   @ApiProperty({ example: 1 })
   @IsInt()
   categoryId!: number;
+
+  @ApiPropertyOptional({ description: "Mentor (User) IDsi", nullable: true })
+  @IsOptional()
+  @IsUUID()
+  mentorId?: string | null;
 }
 
 export class UpdateCourseDto {
@@ -43,10 +48,32 @@ export class UpdateCourseDto {
   @IsOptional()
   @IsInt()
   categoryId?: number;
+
+  @ApiPropertyOptional({ description: "Mentor (User) IDsi", nullable: true })
+  @IsOptional()
+  @IsUUID()
+  mentorId?: string | null;
 }
 
 export class CreateCategoryDto {
   @ApiProperty({ example: "Frontend" })
   @IsString()
   name!: string;
+
+  @ApiPropertyOptional({ example: "Frontend yo‘nalishidagi kurslar" })
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
+
+export class UpdateCategoryDto {
+  @ApiPropertyOptional({ example: "Yangi nom" })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ example: "Yangilangan tavsif" })
+  @IsOptional()
+  @IsString()
+  description?: string;
 }

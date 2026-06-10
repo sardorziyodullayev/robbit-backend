@@ -48,7 +48,9 @@ export class InternshipApplication {
   @Column({ type: "varchar", nullable: true })
   rejectReason!: string | null;
 
-  @Column({ type: "datetime", nullable: true })
+  // `type: Date` — TypeORM uni drayverga qarab normallashtiradi:
+  // postgres → "timestamp", sqlite → "datetime" (ikkalasida ham ishlaydi).
+  @Column({ type: Date, nullable: true })
   reviewedAt!: Date | null;
 
   @CreateDateColumn()

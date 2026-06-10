@@ -14,11 +14,13 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 
 import { AdminService } from "./admin.service";
 import {
+  AdminReviewListDto,
   AdminUserListDto,
   ChangeRoleDto,
   CreateBranchDto,
   ResetPasswordDto,
   UpdateBranchDto,
+  UpdateUserDto,
 } from "./dto/admin.dto";
 import { Roles } from "../common/decorators/roles.decorator";
 import { RolesGuard } from "../common/guards/roles.guard";
@@ -60,6 +62,44 @@ export class AdminController {
   @ApiOperation({ summary: "Foydalanuvchi rolini o‘zgartirish" })
   changeRole(@Param("id") id: string, @Body() dto: ChangeRoleDto) {
     return this.service.changeRole(id, dto);
+  }
+
+  @Patch("users/:id")
+  @ApiOperation({ summary: "Foydalanuvchi profilini yangilash" })
+  updateUser(@Param("id") id: string, @Body() dto: UpdateUserDto) {
+    return this.service.updateUser(id, dto);
+  }
+
+  @HttpCode(204)
+  @Delete("users/:id")
+  @ApiOperation({ summary: "Foydalanuvchini o‘chirish" })
+  async deleteUser(@Param("id") id: string) {
+    await this.service.deleteUser(id);
+  }
+
+  @Get("users/:id/progress")
+  @ApiOperation({ summary: "Foydalanuvchi progressi (kurslar kesimida)" })
+  userProgress(@Param("id") id: string) {
+    return this.service.userProgress(id);
+  }
+
+  @Get("dashboard")
+  @ApiOperation({ summary: "Dashboard: statistika, top kurslar, oxirgi izohlar" })
+  dashboard() {
+    return this.service.dashboard();
+  }
+
+  @Get("reviews")
+  @ApiOperation({ summary: "Barcha izohlar (pagination)" })
+  reviews(@Query() query: AdminReviewListDto) {
+    return this.service.listReviews(query);
+  }
+
+  @HttpCode(204)
+  @Delete("reviews/:id")
+  @ApiOperation({ summary: "Izohni o‘chirish" })
+  async deleteReview(@Param("id") id: string) {
+    await this.service.deleteReview(Number(id));
   }
 
   @Get("stats")

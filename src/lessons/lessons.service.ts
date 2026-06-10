@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
-import { Repository } from "typeorm";
+import { In, Like, Repository } from "typeorm";
 
 import { Lesson } from "./lesson.entity";
 import { LessonProgress } from "./lesson-progress.entity";
@@ -14,6 +14,18 @@ import { CreateLessonDto, UpdateLessonDto } from "./dto/lesson.dto";
 import { StorageService } from "../common/storage/storage.service";
 import { EnrollmentService } from "../enrollment/enrollment.service";
 import { AuthenticatedUser } from "../common/interfaces/jwt-payload.interface";
+import { Paginated, parsePagination } from "../common/pagination";
+
+export interface AdminLessonView {
+  id: number;
+  title: string;
+  description?: string | null;
+  courseId: number;
+  course: { id: number; title: string };
+  order: number;
+  videoUrl?: string | null;
+  createdAt?: string;
+}
 
 export interface LessonView {
   id: number;
@@ -101,6 +113,38 @@ export class LessonsService {
     const l = await this.lessons.findOne({ where: { id } });
     if (!l) throw new NotFoundException("Dars topilmadi");
     await this.lessons.remove(l);
+  }
+
+  // Admin/mentor uchun barcha darslar ro'yxati (kurs nomi bilan, pagination).
+  async listAdmin(query: { page?: number; limit?: number; search?: string }): Promise<Paginated<AdminLessonView>> {
+    const { page, limit, skip, take } = parsePagination(query.page, query.limit);
+    const where = query.search ? { title: Like(`%${query.search}%`) } : {};
+    const [items, total] = await this.lessons.findAndCount({
+      where,
+      skip,
+      take,
+      order: { courseId: "ASC", order: "ASC", id: "ASC" },
+    });
+    const courseIds = [...new Set(items.map((l) => l.courseId))];
+    const courses = courseIds.length
+      ? await this.courses.find({ where: { id: In(courseIds) } })
+      : [];
+    const titleById = new Map(courses.map((c) => [c.id, c.title]));
+    return {
+      items: items.map((l) => ({
+        id: l.id,
+        title: l.title,
+        description: l.description,
+        courseId: l.courseId,
+        course: { id: l.courseId, title: titleById.get(l.courseId) ?? "—" },
+        order: l.order,
+        videoUrl: l.videoUrl,
+        createdAt: l.createdAt?.toISOString(),
+      })),
+      total,
+      page,
+      limit,
+    };
   }
 
   async markCompleted(lessonId: number, user: AuthenticatedUser): Promise<void> {
