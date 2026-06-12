@@ -27,6 +27,7 @@ import {
 } from "./dto/admin.dto";
 import { Paginated, parsePagination } from "../common/pagination";
 import { ProfileView } from "../profile/profile.service";
+import { StorageService } from "../common/storage/storage.service";
 
 interface AdminReviewView {
   id: number;
@@ -66,6 +67,7 @@ export class AdminService {
     @InjectRepository(Enrollment) private readonly enrollments: Repository<Enrollment>,
     @InjectRepository(Certificate) private readonly certificates: Repository<Certificate>,
     @InjectRepository(LessonProgress) private readonly lessonProgress: Repository<LessonProgress>,
+    private readonly storage: StorageService,
   ) {}
 
   async listUsers(query: AdminUserListDto): Promise<Paginated<AdminUserView>> {
@@ -204,6 +206,24 @@ export class AdminService {
     }
     await this.users.save(u);
     return this.userById(id);
+  }
+
+  async uploadUserAvatar(id: string, file: Express.Multer.File): Promise<ProfileView> {
+    const u = await this.users.findOne({ where: { id } });
+    if (!u) throw new NotFoundException("Foydalanuvchi topilmadi");
+    if (!file) throw new BadRequestException("Fayl yuborilmadi");
+    if (u.avatar) await this.storage.delete(u.avatar);
+    const stored = await this.storage.upload(file, { prefix: "avatar" });
+    u.avatar = stored.url;
+    return this.toProfile(await this.users.save(u));
+  }
+
+  async deleteUserAvatar(id: string): Promise<ProfileView> {
+    const u = await this.users.findOne({ where: { id } });
+    if (!u) throw new NotFoundException("Foydalanuvchi topilmadi");
+    if (u.avatar) await this.storage.delete(u.avatar);
+    u.avatar = null;
+    return this.toProfile(await this.users.save(u));
   }
 
   async deleteUser(id: string): Promise<void> {

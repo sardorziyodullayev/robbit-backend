@@ -35,7 +35,24 @@ export class SeedService implements OnApplicationBootstrap {
     const email = this.cfg.get<string>("ADMIN_EMAIL") ?? "admin@robbit.local";
     const password = this.cfg.get<string>("ADMIN_PASSWORD") ?? "Admin@123";
     const existing = await this.users.findOne({ where: { username } });
-    if (existing) return;
+
+    if (existing) {
+      // Admin allaqachon bor — parol/rol/holatni env qiymatlari bilan
+      // sinxronlaymiz, shunda serverda ADMIN_PASSWORD o'zgartirilsa ham
+      // login har doim env'dagi parol bilan ishlaydi.
+      const passwordMatches = await bcrypt.compare(password, existing.passwordHash);
+      const needsUpdate =
+        !passwordMatches || existing.role !== "SUPER_ADMIN" || !existing.isActive;
+      if (needsUpdate) {
+        existing.passwordHash = await bcrypt.hash(password, 10);
+        existing.role = "SUPER_ADMIN";
+        existing.isActive = true;
+        await this.users.save(existing);
+        this.logger.log(`Admin '${username}' credentials synced with env`);
+      }
+      return;
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     await this.users.save(
       this.users.create({
@@ -46,7 +63,7 @@ export class SeedService implements OnApplicationBootstrap {
         isActive: true,
       }),
     );
-    this.logger.log(`Seeded admin '${username}' (password: ${password})`);
+    this.logger.log(`Seeded admin '${username}'`);
   }
 
   private async ensureCategories() {

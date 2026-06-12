@@ -20,6 +20,14 @@ export class CreateLessonDto {
   @IsInt()
   @Min(0)
   order?: number;
+
+  @ApiPropertyOptional({
+    example: "https://pub-xxxx.r2.dev/lesson.mp4",
+    description: "Video URL (R2 yoki boshqa joyga qo'lda yuklangan video havolasi)",
+  })
+  @IsOptional()
+  @IsString()
+  videoUrl?: string;
 }
 
 export class UpdateLessonDto {
@@ -43,4 +51,12 @@ export class UpdateLessonDto {
   @IsInt()
   @Min(0)
   order?: number;
+
+  @ApiPropertyOptional({
+    example: "https://pub-xxxx.r2.dev/lesson.mp4",
+    description: "Video URL (R2 yoki boshqa joyga qo'lda yuklangan video havolasi)",
+  })
+  @IsOptional()
+  @IsString()
+  videoUrl?: string;
 }

@@ -38,7 +38,9 @@ export interface TestHistoryItemView {
   attemptId: number;
   testId: number;
   testTitle: string;
+  courseId?: number;
   courseTitle?: string;
+  courseThumbnail?: string | null;
   score: number;
   percent: number;
   createdAt: string;
@@ -135,7 +137,9 @@ export class ProfileService {
           attemptId: a.id,
           testId: a.testId,
           testTitle: t?.title ?? `Test #${a.testId}`,
+          courseId: t?.courseId,
           courseTitle: c?.title,
+          courseThumbnail: c?.thumbnail ?? null,
           score: a.score,
           percent: a.percent,
           createdAt: a.createdAt.toISOString(),

@@ -8,9 +8,13 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { memoryStorage } from "multer";
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger";
 
 import { AdminService } from "./admin.service";
 import {
@@ -68,6 +72,28 @@ export class AdminController {
   @ApiOperation({ summary: "Foydalanuvchi profilini yangilash" })
   updateUser(@Param("id") id: string, @Body() dto: UpdateUserDto) {
     return this.service.updateUser(id, dto);
+  }
+
+  @Post("users/:id/avatar")
+  @ApiOperation({ summary: "Foydalanuvchi rasmini yuklash" })
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  uploadUserAvatar(
+    @Param("id") id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.service.uploadUserAvatar(id, file);
+  }
+
+  @Delete("users/:id/avatar")
+  @ApiOperation({ summary: "Foydalanuvchi rasmini o‘chirish" })
+  deleteUserAvatar(@Param("id") id: string) {
+    return this.service.deleteUserAvatar(id);
   }
 
   @HttpCode(204)

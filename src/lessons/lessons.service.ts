@@ -91,6 +91,7 @@ export class LessonsService {
       description: dto.description ?? null,
       courseId: dto.courseId,
       order,
+      videoUrl: dto.videoUrl?.trim() || null,
     });
     return this.toView(await this.lessons.save(l));
   }
@@ -106,6 +107,7 @@ export class LessonsService {
     if (dto.title !== undefined) l.title = dto.title;
     if (dto.description !== undefined) l.description = dto.description ?? null;
     if (dto.order !== undefined) l.order = dto.order;
+    if (dto.videoUrl !== undefined) l.videoUrl = dto.videoUrl.trim() || null;
     return this.toView(await this.lessons.save(l));
   }
 
